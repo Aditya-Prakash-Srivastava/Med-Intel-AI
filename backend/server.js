@@ -19,7 +19,16 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*', // Vercel link here when deployed
+  origin: function (origin, callback) {
+    if (!origin || 
+        origin === process.env.FRONTEND_URL || 
+        origin.endsWith('.vercel.app') || 
+        origin.includes('localhost')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 app.use(express.json());
