@@ -49,10 +49,14 @@ const createGmailContext = () => {
   if (!emailUser || !emailPass) return null;
   return {
     transporter: nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
       auth: { user: emailUser, pass: emailPass },
-      connectionTimeout: 10000, // 10 sec max fail fast
-      greetingTimeout: 5000,
+      tls: {
+          rejectUnauthorized: false
+      },
+      connectionTimeout: 10000,
       socketTimeout: 10000,
     }),
     fromAddr: `"MedIntel" <${emailUser}>`,
