@@ -51,6 +51,9 @@ const createGmailContext = () => {
     transporter: nodemailer.createTransport({
       service: 'gmail',
       auth: { user: emailUser, pass: emailPass },
+      connectionTimeout: 10000, // 10 sec max fail fast
+      greetingTimeout: 5000,
+      socketTimeout: 10000,
     }),
     fromAddr: `"MedIntel" <${emailUser}>`,
   };
@@ -125,18 +128,27 @@ const otpEmailHtml = (userName, otpCode) => `
         </div>
       `;
 
-// @desc Generate OTP and dispatch
 const generateAndSendOtp = async (req, res) => {
+  console.log("🔥 API HIT: /api/auth/send-otp");
+  console.log("Body Payload:", req.body);
   try {
     let { fullName, email } = req.body;
-    if (!email || !fullName) return res.status(400).json({ message: "Email and Full Name are required" });
+    if (!email || !fullName) {
+      console.log("❌ Missing email or name");
+      return res.status(400).json({ message: "Email and Full Name are required" });
+    }
     
     email = email.toLowerCase().trim();
 
+    console.log("🔍 Checking if user exists in DB...");
     // Prevent OTP sending if email is already registered
     const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ message: "Account already exists with this email address" });
+    if (userExists) {
+      console.log("❌ Account already exists");
+      return res.status(400).json({ message: "Account already exists with this email address" });
+    }
 
+    console.log("✅ User DB check passed, generating OTP logic...");
     // Generate random 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     
@@ -171,21 +183,28 @@ const generateAndSendOtp = async (req, res) => {
     }
 
     if (!emailSent) {
+      console.log("📨 Attempting to send OTP via normal Gmail SMTP fallback...");
       // Fallback to Gmail
       const ctx = createGmailContext();
       if (ctx) {
+        console.log("⏳ Hitting Gmail servers...");
         await ctx.transporter.sendMail({
           from: ctx.fromAddr,
           to: email,
           subject: 'Your MedIntel Verification Code',
           html,
         });
+        console.log("✅ Gmail Mail sent!");
         emailSent = true;
+      } else {
+        console.log("❌ Gmail config entirely missing. Nodemailer skipped.");
       }
     }
 
+    console.log("✅ Response 200: OTP sent successfully");
     res.status(200).json({ message: "OTP sent successfully" });
   } catch (error) {
+    console.error("🔥 CATCH BLOCK HIT: OTP Logic failed!", error);
     res.status(500).json({ message: `OTP Error: ${error.message}` });
   }
 };
