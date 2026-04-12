@@ -54,7 +54,7 @@ const createGmailContext = () => {
       secure: true,
       auth: { user: emailUser, pass: emailPass },
       tls: {
-          rejectUnauthorized: false
+        rejectUnauthorized: false
       },
       connectionTimeout: 10000,
       socketTimeout: 10000,
@@ -141,7 +141,7 @@ const generateAndSendOtp = async (req, res) => {
       console.log("❌ Missing email or name");
       return res.status(400).json({ message: "Email and Full Name are required" });
     }
-    
+
     email = email.toLowerCase().trim();
 
     console.log("🔍 Checking if user exists in DB...");
@@ -155,14 +155,14 @@ const generateAndSendOtp = async (req, res) => {
     console.log("✅ User DB check passed, generating OTP logic...");
     // Generate random 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
+
     // Clear any previous OTP entries for this email
     await Otp.deleteMany({ email });
-    
+
     // Hash before save for security
     const salt = await bcrypt.genSalt(10);
     const hashedOtp = await bcrypt.hash(otpCode, salt);
-    
+
     await Otp.create({ email, otp: hashedOtp });
 
     // Try Emailing User
@@ -170,7 +170,7 @@ const generateAndSendOtp = async (req, res) => {
     const resendKey = (process.env.RESEND_API_KEY || '').trim();
 
     let emailSent = false;
-    
+
     if (resendKey) {
       try {
         const resend = new Resend(resendKey);
@@ -221,7 +221,7 @@ const verifyOtpOnly = async (req, res) => {
     if (!email || !otp) return res.status(400).json({ message: "Email and OTP are required" });
 
     const emailTrimmed = email.toLowerCase().trim();
-    
+
     const validOtpRecord = await Otp.findOne({ email: emailTrimmed }).sort({ createdAt: -1 });
     if (!validOtpRecord) return res.status(400).json({ message: "OTP expired or not requested." });
 
@@ -246,12 +246,12 @@ const forgotPasswordSendOtp = async (req, res) => {
     if (!userExists) return res.status(404).json({ message: "No account found with this email address" });
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
+
     await Otp.deleteMany({ email });
-    
+
     const salt = await bcrypt.genSalt(10);
     const hashedOtp = await bcrypt.hash(otpCode, salt);
-    
+
     await Otp.create({ email, otp: hashedOtp });
 
     // Use existing OTP HTML helper
@@ -259,7 +259,7 @@ const forgotPasswordSendOtp = async (req, res) => {
     const resendKey = (process.env.RESEND_API_KEY || '').trim();
 
     let emailSent = false;
-    
+
     if (resendKey) {
       try {
         const resend = new Resend(resendKey);
@@ -301,7 +301,7 @@ const forgotPasswordVerifyOtp = async (req, res) => {
     if (!email || !otp) return res.status(400).json({ message: "Email and OTP are required" });
 
     const emailTrimmed = email.toLowerCase().trim();
-    
+
     const validOtpRecord = await Otp.findOne({ email: emailTrimmed }).sort({ createdAt: -1 });
     if (!validOtpRecord) return res.status(400).json({ message: "OTP expired or not requested." });
 
@@ -339,9 +339,9 @@ const resetPassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     user.passwordChangedAt = new Date();
-    
+
     await user.save();
-    
+
     res.json({ message: "Password updated successfully" });
   } catch (error) {
     res.status(500).json({ message: `Reset Password Error: ${error.message}` });
@@ -387,7 +387,7 @@ const loginUser = async (req, res) => {
   try {
     let { email, password } = req.body;
     email = email.toLowerCase().trim();
-    
+
     const user = await User.findOne({ email });
 
     if (user && user.password && (await bcrypt.compare(password, user.password))) {
@@ -407,12 +407,12 @@ const loginUser = async (req, res) => {
 const googleSignup = async (req, res) => {
   try {
     const { googleToken } = req.body;
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${googleToken}` }});
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${googleToken}` } });
     const googleProfile = await response.json();
     if (!googleProfile.email) return res.status(400).json({ message: "Google authentication failed" });
 
     const user = await User.findOne({ email: googleProfile.email.toLowerCase().trim() });
-    
+
     if (user) return res.status(400).json({ message: "Account already exists with this Google email address" });
 
     const newUser = await User.create({
@@ -421,10 +421,10 @@ const googleSignup = async (req, res) => {
       googleId: googleProfile.sub,
       avatarUrl: googleProfile.picture || "data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='24' height='24' fill='%23DFE5E7'/%3E%3Cpath d='M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z' fill='%23FFFFFF'/%3E%3C/svg%3E"
     });
-    
+
     // Trigger Welcome Email
     sendWelcomeEmail(newUser.email, newUser.fullName);
-    
+
     return res.status(201).json({ action: 'registered', message: "Account created successfully via Google!" });
   } catch (error) { res.status(500).json({ message: `Google Server Error: ${error.message}` }); }
 };
@@ -433,12 +433,12 @@ const googleSignup = async (req, res) => {
 const googleLoginEndpoint = async (req, res) => {
   try {
     const { googleToken } = req.body;
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${googleToken}` }});
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${googleToken}` } });
     const googleProfile = await response.json();
     if (!googleProfile.email) return res.status(400).json({ message: "Google authentication failed" });
 
     const user = await User.findOne({ email: googleProfile.email.toLowerCase().trim() });
-    
+
     if (!user) return res.status(401).json({ message: 'Account not found. Please sign up first.' });
 
     return res.json({
@@ -460,11 +460,11 @@ const updateProfile = async (req, res) => {
     if (req.body.email) {
       const parsedEmail = req.body.email.toLowerCase().trim();
       if (parsedEmail !== user.email) {
-         const existingEmail = await User.findOne({ email: parsedEmail });
-         if (existingEmail) {
-            return res.status(400).json({ message: "This email address is already registered." });
-         }
-         user.email = parsedEmail;
+        const existingEmail = await User.findOne({ email: parsedEmail });
+        if (existingEmail) {
+          return res.status(400).json({ message: "This email address is already registered." });
+        }
+        user.email = parsedEmail;
       }
     }
     user.phone = req.body.phone || user.phone;
@@ -475,12 +475,12 @@ const updateProfile = async (req, res) => {
     user.weight = req.body.weight || user.weight;
     user.age = req.body.age || user.age;
     if (req.body.bloodPressure) { user.bloodPressure = req.body.bloodPressure; }
-    
+
     // Check if user is requesting a password change
     if (req.body.newPassword && req.body.currentPassword) {
       const isMatch = await bcrypt.compare(req.body.currentPassword, user.password);
       if (!isMatch) {
-         return res.status(400).json({ message: "Current password does not match. Security verification failed." });
+        return res.status(400).json({ message: "Current password does not match. Security verification failed." });
       }
       // Hash new password using bcrypt
       const salt = await bcrypt.genSalt(10);
@@ -489,19 +489,19 @@ const updateProfile = async (req, res) => {
     }
 
     // If we passed an uploaded avatar, sync it
-    if(req.body.avatarUrl) {
+    if (req.body.avatarUrl) {
       user.avatarUrl = req.body.avatarUrl;
     }
 
     const updatedUser = await user.save();
-    
+
     // Return the formatted user string
     res.json({
-        _id: updatedUser.id, fullName: updatedUser.fullName, email: updatedUser.email, 
-        countryCode: updatedUser.countryCode, phone: updatedUser.phone,
-        dob: updatedUser.dob, gender: updatedUser.gender, height: updatedUser.height, weight: updatedUser.weight, age: updatedUser.age,
-        bloodPressure: updatedUser.bloodPressure, avatarUrl: updatedUser.avatarUrl, token: req.body.token, // echo back their token securely
-        createdAt: updatedUser.createdAt, passwordChangedAt: updatedUser.passwordChangedAt
+      _id: updatedUser.id, fullName: updatedUser.fullName, email: updatedUser.email,
+      countryCode: updatedUser.countryCode, phone: updatedUser.phone,
+      dob: updatedUser.dob, gender: updatedUser.gender, height: updatedUser.height, weight: updatedUser.weight, age: updatedUser.age,
+      bloodPressure: updatedUser.bloodPressure, avatarUrl: updatedUser.avatarUrl, token: req.body.token, // echo back their token securely
+      createdAt: updatedUser.createdAt, passwordChangedAt: updatedUser.passwordChangedAt
     });
   } catch (error) {
     res.status(500).json({ message: `Update Error: ${error.message}` });
@@ -519,7 +519,7 @@ const deleteAccount = async (req, res) => {
     if (user.avatarPublicId) {
       try {
         await cloudinary.uploader.destroy(user.avatarPublicId);
-      } catch(e) {
+      } catch (e) {
         console.error("Cloudinary avatar delete error ignored", e);
       }
     }
@@ -530,7 +530,7 @@ const deleteAccount = async (req, res) => {
       if (report.cloudinaryId) {
         try {
           await cloudinary.uploader.destroy(report.cloudinaryId);
-        } catch(e) {
+        } catch (e) {
           console.error("Cloudinary report delete error ignored", e);
         }
       }
