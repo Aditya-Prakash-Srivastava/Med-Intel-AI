@@ -9,6 +9,7 @@ const protect = async (req, res, next) => {
     try {
       // Extract token from string "Bearer eyJhbGci..."
       token = req.headers.authorization.split(' ')[1];
+      console.log(`🔐 [AUTH] Token received. Verifying...`);
 
       // Verify and decode token using the same Secret Key used during Login
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'medintel_super_secret_key_2026');
@@ -16,16 +17,21 @@ const protect = async (req, res, next) => {
       // Find user in DB and attach it to req object (without password)
       req.user = await User.findById(decoded.id).select('-password');
 
+      if (!req.user) {
+        console.log(`❌ [AUTH] Token valid but user not found in DB!`);
+        return res.status(401).json({ message: 'Not authorized, user not found' });
+      }
+
+      console.log(`✅ [AUTH] Authorized: ${req.user.email}`);
       // Secure passing to the next Controller function
       next();
     } catch (error) {
-      console.error("Token verification failed:", error);
-      res.status(401).json({ message: 'Not authorized, security token failed' });
+      console.error(`❌ [AUTH] Token verification failed:`, error.message);
+      return res.status(401).json({ message: 'Not authorized, security token failed' });
     }
-  }
-
-  if (!token) {
-    res.status(401).json({ message: 'Not authorized, no token provided' });
+  } else {
+    console.log(`🚫 [AUTH] No Bearer token in request header.`);
+    return res.status(401).json({ message: 'Not authorized, no token provided' });
   }
 };
 
