@@ -172,37 +172,54 @@ const generateAndSendOtp = async (req, res) => {
     let emailSent = false;
 
     if (resendKey) {
+      console.log("📨 [RESEND] API Key found. Sending OTP via Resend HTTP API...");
       try {
         const resend = new Resend(resendKey);
-        const { error } = await resend.emails.send({
-          from: (process.env.RESEND_FROM || 'MedIntel <onboarding@resend.dev>').trim(),
+        const { data, error } = await resend.emails.send({
+          from: 'MedIntel <onboarding@resend.dev>',
           to: email,
           subject: 'Your MedIntel Verification Code',
           html,
         });
-        if (!error) emailSent = true;
+        if (error) {
+          console.error('❌ [RESEND] API returned error:', JSON.stringify(error));
+        } else {
+          console.log('✅ [RESEND] Email sent successfully! ID:', data?.id);
+          emailSent = true;
+        }
       } catch (e) {
-        console.error('Resend OTP Error:', e);
+        console.error('❌ [RESEND] Exception caught:', e.message);
       }
+    } else {
+      console.log("⚠️ [RESEND] No RESEND_API_KEY found in environment.");
     }
 
     if (!emailSent) {
       console.log("📨 Attempting to send OTP via normal Gmail SMTP fallback...");
-      // Fallback to Gmail
+      // Fallback to Gmail (works on localhost, blocked on Render free tier)
       const ctx = createGmailContext();
       if (ctx) {
         console.log("⏳ Hitting Gmail servers...");
-        await ctx.transporter.sendMail({
-          from: ctx.fromAddr,
-          to: email,
-          subject: 'Your MedIntel Verification Code',
-          html,
-        });
-        console.log("✅ Gmail Mail sent!");
-        emailSent = true;
+        try {
+          await ctx.transporter.sendMail({
+            from: ctx.fromAddr,
+            to: email,
+            subject: 'Your MedIntel Verification Code',
+            html,
+          });
+          console.log("✅ Gmail Mail sent!");
+          emailSent = true;
+        } catch (gmailErr) {
+          console.error("❌ Gmail SMTP also failed:", gmailErr.message);
+        }
       } else {
         console.log("❌ Gmail config entirely missing. Nodemailer skipped.");
       }
+    }
+
+    if (!emailSent) {
+      console.error("🔥 ALL email methods failed! No OTP was delivered.");
+      return res.status(500).json({ message: "Email service unavailable. Please try Google Sign-up instead." });
     }
 
     console.log("✅ Response 200: OTP sent successfully");
@@ -261,35 +278,51 @@ const forgotPasswordSendOtp = async (req, res) => {
     let emailSent = false;
 
     if (resendKey) {
+      console.log("📨 [RESEND] Sending forgot-password OTP via Resend...");
       try {
         const resend = new Resend(resendKey);
-        const { error } = await resend.emails.send({
-          from: (process.env.RESEND_FROM || 'MedIntel <onboarding@resend.dev>').trim(),
+        const { data, error } = await resend.emails.send({
+          from: 'MedIntel <onboarding@resend.dev>',
           to: email,
           subject: 'MedIntel Password Reset Code',
           html,
         });
-        if (!error) emailSent = true;
+        if (error) {
+          console.error('❌ [RESEND] Forgot PW error:', JSON.stringify(error));
+        } else {
+          console.log('✅ [RESEND] Forgot PW email sent! ID:', data?.id);
+          emailSent = true;
+        }
       } catch (e) {
-        console.error('Resend Forgot PW OTP Error:', e);
+        console.error('❌ [RESEND] Forgot PW exception:', e.message);
       }
     }
 
     if (!emailSent) {
       const ctx = createGmailContext();
       if (ctx) {
-        await ctx.transporter.sendMail({
-          from: ctx.fromAddr,
-          to: email,
-          subject: 'MedIntel Password Reset Code',
-          html,
-        });
-        emailSent = true;
+        console.log("⏳ Forgot PW: Hitting Gmail servers...");
+        try {
+          await ctx.transporter.sendMail({
+            from: ctx.fromAddr,
+            to: email,
+            subject: 'MedIntel Password Reset Code',
+            html,
+          });
+          emailSent = true;
+        } catch (gmailErr) {
+          console.error("❌ Gmail SMTP forgot-pw failed:", gmailErr.message);
+        }
       }
+    }
+
+    if (!emailSent) {
+      return res.status(500).json({ message: "Email service unavailable. Please try again later." });
     }
 
     res.status(200).json({ message: "Password reset OTP sent successfully" });
   } catch (error) {
+    console.error("🔥 Forgot PW OTP Error:", error);
     res.status(500).json({ message: `OTP Error: ${error.message}` });
   }
 };
