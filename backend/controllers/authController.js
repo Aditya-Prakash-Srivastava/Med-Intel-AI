@@ -43,6 +43,44 @@ const welcomeEmailHtml = (userName) => `
         </div>
       `;
 
+// 🚀 PRIMARY: Brevo (Sendinblue) HTTP API — works on Render Free Tier (Port 443)
+// Free: 300 emails/day, no domain verification needed, just verify sender email
+const sendViaBrevo = async (toEmail, subject, htmlContent) => {
+  const brevoKey = (process.env.BREVO_API_KEY || '').trim();
+  if (!brevoKey) return false;
+
+  console.log("📨 [BREVO] Sending email via Brevo HTTP API...");
+  try {
+    const senderEmail = (process.env.EMAIL_USER || 'noreply@medintel.com').trim();
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': brevoKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        sender: { name: 'MedIntel AI', email: senderEmail },
+        to: [{ email: toEmail }],
+        subject: subject,
+        htmlContent: htmlContent,
+      }),
+    });
+
+    const data = await response.json();
+    if (response.ok) {
+      console.log(`✅ [BREVO] Email sent successfully! MessageId: ${data.messageId}`);
+      return true;
+    } else {
+      console.error(`❌ [BREVO] API Error:`, JSON.stringify(data));
+      return false;
+    }
+  } catch (err) {
+    console.error(`❌ [BREVO] Exception:`, err.message);
+    return false;
+  }
+};
+
 const createGmailContext = () => {
   const emailUser = (process.env.EMAIL_USER || '').trim();
   const emailPass = (process.env.EMAIL_PASS || '').replace(/\s/g, '');
@@ -165,41 +203,45 @@ const generateAndSendOtp = async (req, res) => {
 
     await Otp.create({ email, otp: hashedOtp });
 
-    // Try Emailing User
+    // Try Emailing User — Priority: Brevo > Resend > Gmail
     const html = otpEmailHtml(fullName, otpCode);
-    const resendKey = (process.env.RESEND_API_KEY || '').trim();
-
     let emailSent = false;
 
-    if (resendKey) {
-      console.log("📨 [RESEND] API Key found. Sending OTP via Resend HTTP API...");
-      try {
-        const resend = new Resend(resendKey);
-        const { data, error } = await resend.emails.send({
-          from: 'MedIntel <onboarding@resend.dev>',
-          to: email,
-          subject: 'Your MedIntel Verification Code',
-          html,
-        });
-        if (error) {
-          console.error('❌ [RESEND] API returned error:', JSON.stringify(error));
-        } else {
-          console.log('✅ [RESEND] Email sent successfully! ID:', data?.id);
-          emailSent = true;
-        }
-      } catch (e) {
-        console.error('❌ [RESEND] Exception caught:', e.message);
-      }
-    } else {
-      console.log("⚠️ [RESEND] No RESEND_API_KEY found in environment.");
+    // 1️⃣ PRIMARY: Brevo HTTP API (works perfectly on Render free tier)
+    if (!emailSent) {
+      emailSent = await sendViaBrevo(email, 'Your MedIntel Verification Code', html);
     }
 
+    // 2️⃣ SECONDARY: Resend (only works if domain verified)
     if (!emailSent) {
-      console.log("📨 Attempting to send OTP via normal Gmail SMTP fallback...");
-      // Fallback to Gmail (works on localhost, blocked on Render free tier)
+      const resendKey = (process.env.RESEND_API_KEY || '').trim();
+      if (resendKey) {
+        console.log("📨 [RESEND] Trying Resend as fallback...");
+        try {
+          const resend = new Resend(resendKey);
+          const { data, error } = await resend.emails.send({
+            from: 'MedIntel <onboarding@resend.dev>',
+            to: email,
+            subject: 'Your MedIntel Verification Code',
+            html,
+          });
+          if (!error) {
+            console.log('✅ [RESEND] Email sent! ID:', data?.id);
+            emailSent = true;
+          } else {
+            console.error('❌ [RESEND] Error:', JSON.stringify(error));
+          }
+        } catch (e) {
+          console.error('❌ [RESEND] Exception:', e.message);
+        }
+      }
+    }
+
+    // 3️⃣ LAST RESORT: Gmail SMTP (works on localhost only, blocked on Render)
+    if (!emailSent) {
       const ctx = createGmailContext();
       if (ctx) {
-        console.log("⏳ Hitting Gmail servers...");
+        console.log("⏳ [GMAIL] Trying SMTP fallback...");
         try {
           await ctx.transporter.sendMail({
             from: ctx.fromAddr,
@@ -207,13 +249,11 @@ const generateAndSendOtp = async (req, res) => {
             subject: 'Your MedIntel Verification Code',
             html,
           });
-          console.log("✅ Gmail Mail sent!");
+          console.log("✅ [GMAIL] Mail sent!");
           emailSent = true;
         } catch (gmailErr) {
-          console.error("❌ Gmail SMTP also failed:", gmailErr.message);
+          console.error("❌ [GMAIL] SMTP failed:", gmailErr.message);
         }
-      } else {
-        console.log("❌ Gmail config entirely missing. Nodemailer skipped.");
       }
     }
 
@@ -273,46 +313,39 @@ const forgotPasswordSendOtp = async (req, res) => {
 
     // Use existing OTP HTML helper
     const html = otpEmailHtml(userExists.fullName, otpCode);
-    const resendKey = (process.env.RESEND_API_KEY || '').trim();
-
     let emailSent = false;
 
-    if (resendKey) {
-      console.log("📨 [RESEND] Sending forgot-password OTP via Resend...");
-      try {
-        const resend = new Resend(resendKey);
-        const { data, error } = await resend.emails.send({
-          from: 'MedIntel <onboarding@resend.dev>',
-          to: email,
-          subject: 'MedIntel Password Reset Code',
-          html,
-        });
-        if (error) {
-          console.error('❌ [RESEND] Forgot PW error:', JSON.stringify(error));
-        } else {
-          console.log('✅ [RESEND] Forgot PW email sent! ID:', data?.id);
-          emailSent = true;
-        }
-      } catch (e) {
-        console.error('❌ [RESEND] Forgot PW exception:', e.message);
-      }
+    // 1️⃣ PRIMARY: Brevo
+    if (!emailSent) {
+      emailSent = await sendViaBrevo(email, 'MedIntel Password Reset Code', html);
     }
 
+    // 2️⃣ SECONDARY: Resend
     if (!emailSent) {
-      const ctx = createGmailContext();
-      if (ctx) {
-        console.log("⏳ Forgot PW: Hitting Gmail servers...");
+      const resendKey = (process.env.RESEND_API_KEY || '').trim();
+      if (resendKey) {
         try {
-          await ctx.transporter.sendMail({
-            from: ctx.fromAddr,
+          const resend = new Resend(resendKey);
+          const { data, error } = await resend.emails.send({
+            from: 'MedIntel <onboarding@resend.dev>',
             to: email,
             subject: 'MedIntel Password Reset Code',
             html,
           });
+          if (!error) { emailSent = true; console.log('✅ [RESEND] Forgot PW sent! ID:', data?.id); }
+          else { console.error('❌ [RESEND] Forgot PW error:', JSON.stringify(error)); }
+        } catch (e) { console.error('❌ [RESEND] Exception:', e.message); }
+      }
+    }
+
+    // 3️⃣ LAST RESORT: Gmail
+    if (!emailSent) {
+      const ctx = createGmailContext();
+      if (ctx) {
+        try {
+          await ctx.transporter.sendMail({ from: ctx.fromAddr, to: email, subject: 'MedIntel Password Reset Code', html });
           emailSent = true;
-        } catch (gmailErr) {
-          console.error("❌ Gmail SMTP forgot-pw failed:", gmailErr.message);
-        }
+        } catch (gmailErr) { console.error("❌ [GMAIL] Forgot PW failed:", gmailErr.message); }
       }
     }
 
