@@ -33,6 +33,28 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// 🔥 Global Advanced Logger Middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  console.log(`\n========================================`);
+  console.log(`🚀 [${new Date().toISOString()}] INCOMING REQUEST`);
+  console.log(`➡️  METHOD: ${req.method} | ROUTE: ${req.originalUrl}`);
+  
+  // Conditionally log Body (excluding sensitive passwords)
+  const safeBody = { ...req.body };
+  if(safeBody.password) safeBody.password = "***HIDDEN***";
+  console.log(`📦  PAYLOAD:`, Object.keys(safeBody).length ? safeBody : "Empty");
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const statusIcon = res.statusCode >= 400 ? '❌' : '✅';
+    console.log(`${statusIcon}  RESPONSE STATUS: ${res.statusCode} | TIME: ${duration}ms`);
+    console.log(`========================================\n`);
+  });
+  
+  next();
+});
+
 // Routes Mounts
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);

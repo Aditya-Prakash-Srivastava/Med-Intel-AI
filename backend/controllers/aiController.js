@@ -32,13 +32,15 @@ exports.analyzeReport = async (req, res) => {
     let imagePart = null;
     let tempFilePath = null;
     
+    console.log(`🧠 [AI MODULE] Starting analysis for fileType: ${fileType} | URL: ${targetUrl.substring(0, 50)}...`);
+
     // Explicitly use the UI-provided fileType property instead of strict URL extension parsing
     // This perfectly catches raw Cloudinary URLs that might not retain standard extensions
     if(fileType === 'pdf') {
-       // Deep Native Vision Extraction Module (GoogleAIFileManager)
-       // Supports reading natively wrapped scanned physical paper PDFs perfectly
+       console.log(`📄 [AI MODULE] PDF Detected. Attempting deep native vision extraction via GoogleAIFileManager...`);
        const response = await fetch(targetUrl);
        if (!response.ok) {
+          console.error(`❌ [AI MODULE] Failed to fetch PDF. HTTP: ${response.status}`);
           throw new Error(`Failed to fetch original PDF. HTTP Status: ${response.status}`);
        }
        const arrayBuffer = await response.arrayBuffer();
@@ -111,8 +113,10 @@ CRITICAL RULE: If the document is NOT a medical report (for example, if it's a r
         inferencePayload.push(imagePart);
     }
     
+    console.log(`🤖 [AI MODULE] Triggering Gemini 2.5 Flash Inference...`);
     const result = await model.generateContent(inferencePayload);
     const responseText = result.response.text();
+    console.log(`✅ [AI MODULE] Gemini Inference Complete! Raw payload size: ${responseText.length} chars.`);
     
     // ALWAYS Clean up secure temporary node storage after extraction succeeds
     if (tempFilePath && fs.existsSync(tempFilePath)) {
