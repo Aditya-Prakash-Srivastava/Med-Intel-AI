@@ -1,14 +1,15 @@
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
 
 const connectDB = async () => {
   try {
-    // Force Mongoose parameters to suppress warnings
     const conn = await mongoose.connect(process.env.MONGO_URI);
-    console.log(`✅ MongoDB Connected Successfully: ${conn.connection.host}`);
+    logger.info(`MongoDB Connected Successfully to host: ${conn.connection.host}`);
   } catch (error) {
-    console.error(`❌ Error connecting to MongoDB: ${error.message}`);
+    logger.error('Error connecting to MongoDB database', error);
     process.exit(1); // Exit process with failure
   }
 };
 
 module.exports = connectDB;
+

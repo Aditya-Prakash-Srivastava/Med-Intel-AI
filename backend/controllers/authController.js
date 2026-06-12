@@ -6,6 +6,7 @@ const Report = require('../models/Report');
 const Otp = require('../models/Otp');
 const cloudinary = require('../config/cloudinary');
 const { Resend } = require('resend');
+const logger = require('../utils/logger');
 
 // Generate Secure User Session Token
 const generateToken = (id) => {
@@ -49,7 +50,7 @@ const sendViaBrevo = async (toEmail, subject, htmlContent) => {
   const brevoKey = (process.env.BREVO_API_KEY || '').trim();
   if (!brevoKey) return false;
 
-  console.log("📨 [BREVO] Sending email via Brevo HTTP API...");
+  logger.info(`[BREVO] Sending email to ${toEmail}...`);
   try {
     const senderEmail = (process.env.EMAIL_USER || 'noreply@medintel.com').trim();
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -69,14 +70,14 @@ const sendViaBrevo = async (toEmail, subject, htmlContent) => {
 
     const data = await response.json();
     if (response.ok) {
-      console.log(`✅ [BREVO] Email sent successfully! MessageId: ${data.messageId}`);
+      logger.info(`[BREVO] Email sent successfully to ${toEmail}. MessageId: ${data.messageId}`);
       return true;
     } else {
-      console.error(`❌ [BREVO] API Error:`, JSON.stringify(data));
+      logger.error(`[BREVO] API Error sending email to ${toEmail}`, data);
       return false;
     }
   } catch (err) {
-    console.error(`❌ [BREVO] Exception:`, err.message);
+    logger.error(`[BREVO] Exception sending email to ${toEmail}`, err);
     return false;
   }
 };
@@ -115,10 +116,13 @@ const sendWelcomeEmail = async (userEmail, userName) => {
         subject: WELCOME_SUBJECT,
         html,
       });
-      if (!error) return;
-      console.error('[Email] Resend:', error.message || JSON.stringify(error));
+      if (!error) {
+        logger.info(`[Email] Welcome email sent via Resend to ${userEmail}`);
+        return;
+      }
+      logger.error(`[Email] Resend error sending to ${userEmail}`, error);
     } catch (e) {
-      console.error('[Email] Resend:', e.message || e);
+      logger.error(`[Email] Resend exception sending to ${userEmail}`, e);
     }
   }
 
@@ -126,13 +130,9 @@ const sendWelcomeEmail = async (userEmail, userName) => {
     const ctx = createGmailContext();
     if (!ctx) {
       if (!resendKey) {
-        console.log(
-          `[Email] Welcome skipped for ${userEmail}: add RESEND_API_KEY in backend/.env (see https://resend.com/api-keys) or Gmail EMAIL_USER + EMAIL_PASS`
-        );
+        logger.warn(`[Email] Welcome skipped for ${userEmail}: add RESEND_API_KEY or Gmail credentials.`);
       } else {
-        console.log(
-          `[Email] Welcome not sent to ${userEmail}: Resend failed — check RESEND_API_KEY / RESEND_FROM, or set Gmail EMAIL_USER + EMAIL_PASS as fallback`
-        );
+        logger.warn(`[Email] Welcome not sent to ${userEmail}: Resend failed and Gmail credentials missing.`);
       }
       return;
     }
@@ -143,11 +143,12 @@ const sendWelcomeEmail = async (userEmail, userName) => {
       subject: WELCOME_SUBJECT,
       html,
     });
+    logger.info(`[Email] Welcome email sent via SMTP to ${userEmail}`);
   } catch (error) {
-    console.error('Nodemailer Email Error:', error.message || error);
+    logger.error(`[Email] Nodemailer SMTP Error sending to ${userEmail}`, error);
     const code = error.responseCode || error.code;
     if (code === 535 || String(error.message || '').includes('Invalid login')) {
-      console.error('[Email] Gmail rejected login — use a Google App Password, or use Resend (RESEND_API_KEY).');
+      logger.error('[Email] Gmail rejected login - verify App Password or use Resend.');
     }
   }
 };
@@ -171,26 +172,23 @@ const otpEmailHtml = (userName, otpCode) => `
       `;
 
 const generateAndSendOtp = async (req, res) => {
-  console.log("🔥 API HIT: /api/auth/send-otp");
-  console.log("Body Payload:", req.body);
+  logger.info(`[Auth] OTP generation request for email: ${req.body?.email}`);
   try {
     let { fullName, email } = req.body;
     if (!email || !fullName) {
-      console.log("❌ Missing email or name");
+      logger.warn(`[Auth] OTP request failed: missing email or name`);
       return res.status(400).json({ message: "Email and Full Name are required" });
     }
 
     email = email.toLowerCase().trim();
 
-    console.log("🔍 Checking if user exists in DB...");
     // Prevent OTP sending if email is already registered
     const userExists = await User.findOne({ email });
     if (userExists) {
-      console.log("❌ Account already exists");
+      logger.warn(`[Auth] OTP request failed: account already exists for ${email}`);
       return res.status(400).json({ message: "Account already exists with this email address" });
     }
 
-    console.log("✅ User DB check passed, generating OTP logic...");
     // Generate random 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -216,7 +214,7 @@ const generateAndSendOtp = async (req, res) => {
     if (!emailSent) {
       const resendKey = (process.env.RESEND_API_KEY || '').trim();
       if (resendKey) {
-        console.log("📨 [RESEND] Trying Resend as fallback...");
+        logger.info(`[RESEND] Attempting OTP delivery to ${email}...`);
         try {
           const resend = new Resend(resendKey);
           const { data, error } = await resend.emails.send({
@@ -226,13 +224,13 @@ const generateAndSendOtp = async (req, res) => {
             html,
           });
           if (!error) {
-            console.log('✅ [RESEND] Email sent! ID:', data?.id);
+            logger.info(`[RESEND] OTP sent to ${email}. ID: ${data?.id}`);
             emailSent = true;
           } else {
-            console.error('❌ [RESEND] Error:', JSON.stringify(error));
+            logger.error(`[RESEND] Error sending OTP to ${email}`, error);
           }
         } catch (e) {
-          console.error('❌ [RESEND] Exception:', e.message);
+          logger.error(`[RESEND] Exception sending OTP to ${email}`, e);
         }
       }
     }
@@ -241,7 +239,7 @@ const generateAndSendOtp = async (req, res) => {
     if (!emailSent) {
       const ctx = createGmailContext();
       if (ctx) {
-        console.log("⏳ [GMAIL] Trying SMTP fallback...");
+        logger.info(`[GMAIL] Attempting OTP SMTP fallback to ${email}...`);
         try {
           await ctx.transporter.sendMail({
             from: ctx.fromAddr,
@@ -249,23 +247,23 @@ const generateAndSendOtp = async (req, res) => {
             subject: 'Your MedIntel Verification Code',
             html,
           });
-          console.log("✅ [GMAIL] Mail sent!");
+          logger.info(`[GMAIL] OTP sent via SMTP to ${email}`);
           emailSent = true;
         } catch (gmailErr) {
-          console.error("❌ [GMAIL] SMTP failed:", gmailErr.message);
+          logger.error(`[GMAIL] SMTP failed for OTP to ${email}`, gmailErr);
         }
       }
     }
 
     if (!emailSent) {
-      console.error("🔥 ALL email methods failed! No OTP was delivered.");
+      logger.error(`[Auth] All email OTP delivery methods failed for ${email}`);
       return res.status(500).json({ message: "Email service unavailable. Please try Google Sign-up instead." });
     }
 
-    console.log("✅ Response 200: OTP sent successfully");
+    logger.info(`[Auth] OTP sent successfully to ${email}`);
     res.status(200).json({ message: "OTP sent successfully" });
   } catch (error) {
-    console.error("🔥 CATCH BLOCK HIT: OTP Logic failed!", error);
+    logger.error("[Auth] OTP generation error", error);
     res.status(500).json({ message: `OTP Error: ${error.message}` });
   }
 };
@@ -293,6 +291,7 @@ const verifyOtpOnly = async (req, res) => {
 
 // @desc Generate OTP for Forgot Password flow
 const forgotPasswordSendOtp = async (req, res) => {
+  logger.info(`[Auth] Forgot password OTP request for email: ${req.body?.email}`);
   try {
     let { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email is required" });
@@ -300,7 +299,10 @@ const forgotPasswordSendOtp = async (req, res) => {
 
     // Ensure user actually exists before sending OTP
     const userExists = await User.findOne({ email });
-    if (!userExists) return res.status(404).json({ message: "No account found with this email address" });
+    if (!userExists) {
+      logger.warn(`[Auth] Forgot password request failed: no account for ${email}`);
+      return res.status(404).json({ message: "No account found with this email address" });
+    }
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -324,6 +326,7 @@ const forgotPasswordSendOtp = async (req, res) => {
     if (!emailSent) {
       const resendKey = (process.env.RESEND_API_KEY || '').trim();
       if (resendKey) {
+        logger.info(`[RESEND] Attempting Forgot Password OTP delivery to ${email}...`);
         try {
           const resend = new Resend(resendKey);
           const { data, error } = await resend.emails.send({
@@ -332,9 +335,15 @@ const forgotPasswordSendOtp = async (req, res) => {
             subject: 'MedIntel Password Reset Code',
             html,
           });
-          if (!error) { emailSent = true; console.log('✅ [RESEND] Forgot PW sent! ID:', data?.id); }
-          else { console.error('❌ [RESEND] Forgot PW error:', JSON.stringify(error)); }
-        } catch (e) { console.error('❌ [RESEND] Exception:', e.message); }
+          if (!error) {
+            emailSent = true;
+            logger.info(`[RESEND] Forgot PW OTP sent to ${email}. ID: ${data?.id}`);
+          } else {
+            logger.error(`[RESEND] Forgot PW error for ${email}`, error);
+          }
+        } catch (e) {
+          logger.error(`[RESEND] Exception sending Forgot PW OTP to ${email}`, e);
+        }
       }
     }
 
@@ -342,20 +351,25 @@ const forgotPasswordSendOtp = async (req, res) => {
     if (!emailSent) {
       const ctx = createGmailContext();
       if (ctx) {
+        logger.info(`[GMAIL] Attempting SMTP fallback for Forgot Password OTP to ${email}...`);
         try {
           await ctx.transporter.sendMail({ from: ctx.fromAddr, to: email, subject: 'MedIntel Password Reset Code', html });
           emailSent = true;
-        } catch (gmailErr) { console.error("❌ [GMAIL] Forgot PW failed:", gmailErr.message); }
+          logger.info(`[GMAIL] Forgot PW OTP sent via SMTP to ${email}`);
+        } catch (gmailErr) {
+          logger.error(`[GMAIL] Forgot PW failed for ${email}`, gmailErr);
+        }
       }
     }
 
     if (!emailSent) {
+      logger.error(`[Auth] All Forgot Password OTP delivery methods failed for ${email}`);
       return res.status(500).json({ message: "Email service unavailable. Please try again later." });
     }
 
     res.status(200).json({ message: "Password reset OTP sent successfully" });
   } catch (error) {
-    console.error("🔥 Forgot PW OTP Error:", error);
+    logger.error("[Auth] Forgot Password OTP Error", error);
     res.status(500).json({ message: `OTP Error: ${error.message}` });
   }
 };
@@ -586,7 +600,7 @@ const deleteAccount = async (req, res) => {
       try {
         await cloudinary.uploader.destroy(user.avatarPublicId);
       } catch (e) {
-        console.error("Cloudinary avatar delete error ignored", e);
+        logger.error("Cloudinary avatar delete error ignored", e);
       }
     }
 
@@ -597,7 +611,7 @@ const deleteAccount = async (req, res) => {
         try {
           await cloudinary.uploader.destroy(report.cloudinaryId);
         } catch (e) {
-          console.error("Cloudinary report delete error ignored", e);
+          logger.error("Cloudinary report delete error ignored", e);
         }
       }
     }
@@ -610,7 +624,7 @@ const deleteAccount = async (req, res) => {
 
     res.json({ success: true, message: "Account and associated data completely removed." });
   } catch (error) {
-    console.error("Account Deletion Error:", error);
+    logger.error("Account Deletion Error", error);
     res.status(500).json({ message: `Deletion Error: ${error.message}` });
   }
 };

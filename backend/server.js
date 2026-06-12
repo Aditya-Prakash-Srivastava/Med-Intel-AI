@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const logger = require('./utils/logger');
+const validateEnv = require('./config/configValidation');
+const errorHandler = require('./middleware/errorHandler');
 
 // Config & Routes Imports
 const connectDB = require('./config/db');
@@ -10,6 +13,9 @@ const reportRoutes = require('./routes/reportRoutes');
 
 // Initialize Environment Variables
 dotenv.config();
+
+// Validate Environment Variables on Startup
+validateEnv();
 
 // Connect to MongoDB Atlas remotely
 connectDB();
@@ -36,20 +42,35 @@ app.use(express.json());
 // 🔥 Global Advanced Logger Middleware
 app.use((req, res, next) => {
   const start = Date.now();
-  console.log(`\n========================================`);
-  console.log(`🚀 [${new Date().toISOString()}] INCOMING REQUEST`);
-  console.log(`➡️  METHOD: ${req.method} | ROUTE: ${req.originalUrl}`);
   
-  // Conditionally log Body (excluding sensitive passwords)
+  // Conditionally copy Body (excluding sensitive fields)
   const safeBody = { ...req.body };
-  if(safeBody.password) safeBody.password = "***HIDDEN***";
-  console.log(`📦  PAYLOAD:`, Object.keys(safeBody).length ? safeBody : "Empty");
+  if (safeBody.password) safeBody.password = "***HIDDEN***";
+  if (safeBody.otp) safeBody.otp = "***HIDDEN***";
+  if (safeBody.googleToken) safeBody.googleToken = "***HIDDEN***";
+  
+  logger.info(`INCOMING REQUEST - METHOD: ${req.method} | ROUTE: ${req.originalUrl}`, {
+    method: req.method,
+    route: req.originalUrl,
+    ip: req.ip,
+    body: Object.keys(safeBody).length ? safeBody : "Empty"
+  });
   
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const statusIcon = res.statusCode >= 400 ? '❌' : '✅';
-    console.log(`${statusIcon}  RESPONSE STATUS: ${res.statusCode} | TIME: ${duration}ms`);
-    console.log(`========================================\n`);
+    if (res.statusCode >= 400) {
+      logger.warn(`API RESPONSE - STATUS: ${res.statusCode} | ROUTE: ${req.originalUrl} | TIME: ${duration}ms`, {
+        status: res.statusCode,
+        route: req.originalUrl,
+        durationMs: duration
+      });
+    } else {
+      logger.info(`API RESPONSE - STATUS: ${res.statusCode} | ROUTE: ${req.originalUrl} | TIME: ${duration}ms`, {
+        status: res.statusCode,
+        route: req.originalUrl,
+        durationMs: duration
+      });
+    }
   });
   
   next();
@@ -66,8 +87,12 @@ app.get('/', (req, res) => {
   res.send("MedIntel AI Backend is running with MongoDB connection active!");
 });
 
+// Centralized Error Handling Middleware
+app.use(errorHandler);
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running actively on port ${PORT}`);
+  logger.info(`Server running actively on port ${PORT}`);
 });
+

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../config/multer');
 const cloudinary = require('../config/cloudinary'); // Import Cloudinary configuration to use deletion APIs
+const logger = require('../utils/logger');
 
 // @route   POST /api/upload
 // @desc    Handles file uploads to Cloudinary, and deletes the old one if its ID is provided
@@ -13,12 +14,13 @@ const uploadMiddleware = upload.single('file');
 router.post('/', (req, res) => {
   uploadMiddleware(req, res, async function (err) {
     if (err) {
-      console.error("Multer Error:", err);
+      logger.error("Multer file upload error", err);
       return res.status(400).json({ success: false, message: err.message, type: "MulterError" });
     }
     
     try {
       if (!req.file) {
+        logger.warn("Upload request received without a file");
         return res.status(400).json({ 
           success: false, 
           message: 'No file found in the request. Please upload a file.' 
@@ -31,14 +33,15 @@ router.post('/', (req, res) => {
     if (oldImageId) {
       try {
         await cloudinary.uploader.destroy(oldImageId);
-        console.log(`Deleted orphaned image from Cloudinary: ${oldImageId}`);
+        logger.info(`Deleted orphaned image from Cloudinary: ${oldImageId}`);
       } catch (deleteError) {
-        console.error("Warning: Failed to delete old image from Cloudinary:", deleteError);
+        logger.error(`Warning: Failed to delete old image from Cloudinary: ${oldImageId}`, deleteError);
         // We don't throw an error here because the new upload was successful, just orphaned a file.
       }
     }
     
     // 2. SUCCESS RESPONSE
+    logger.info(`File successfully uploaded to Cloudinary: ${req.file.filename}`);
     res.status(200).json({
       success: true,
       message: 'File successfully uploaded to Cloudinary',
@@ -48,7 +51,7 @@ router.post('/', (req, res) => {
     });
     
     } catch (error) {
-      console.error("Upload API Error:", error);
+      logger.error("Upload API endpoint error", error);
       res.status(500).json({ 
         success: false, 
         message: 'A backend server error occurred during upload',
@@ -59,3 +62,4 @@ router.post('/', (req, res) => {
 });
 
 module.exports = router;
+
